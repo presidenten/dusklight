@@ -63,6 +63,7 @@ public class DuskActivity extends BorealisActivity {
     static final int COMPANION_PANEL_H = 1080;
 
     private static native void nativeAuxSurfaceChanged(Surface surface, int width, int height);
+    private static native boolean nativeAuxSurfaceAttached();
     private static native void nativeCompanionTouchEvent(int action, float u, float v);
     private static native void nativeCompanionPinch(float factor);
     private static native void nativeDualScreenAvailable(boolean available);
@@ -91,6 +92,7 @@ public class DuskActivity extends BorealisActivity {
     private int lastAuxDisplayId = -1;
     // Swap Screens as last published by native. UI thread only.
     private boolean swapWanted;
+    private static final long AUX_DETACH_BLOCK_MS = 250L;
     // The companion's SurfaceView while it lives in THIS window because the
     // game surface has moved onto the Presentation (swapped). Null otherwise.
     private SurfaceView localCompanionView;
@@ -304,6 +306,21 @@ public class DuskActivity extends BorealisActivity {
         {
             dismissAuxPresentation();
             showAuxPresentation();
+        }
+    }
+
+    /**
+     * Blocks surfaceDestroyed until the render worker has let go of the
+     * companion surface — Android destroys it as soon as that callback
+     * returns, and a present still in flight then aborts the process
+     * (VK_ERROR_SURFACE_LOST_KHR is device loss to Dawn). Normally one frame;
+     * bounded, because a paused game never consumes the detach, and then
+     * nothing is presenting anyway.
+     */
+    private static void awaitAuxDetached() {
+        final long deadline = SystemClock.uptimeMillis() + AUX_DETACH_BLOCK_MS;
+        while (nativeAuxSurfaceAttached() && SystemClock.uptimeMillis() < deadline) {
+            SystemClock.sleep(2);
         }
     }
 
@@ -708,6 +725,7 @@ public class DuskActivity extends BorealisActivity {
             @Override
             public void surfaceDestroyed(SurfaceHolder holder) {
                 nativeAuxSurfaceChanged(null, 0, 0);
+                awaitAuxDetached();
             }
         });
         // Pinch (two fingers) zooms the companion map; while a pinch is
