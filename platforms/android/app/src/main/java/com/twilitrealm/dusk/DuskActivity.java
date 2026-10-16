@@ -935,6 +935,26 @@ public class DuskActivity extends BorealisActivity {
         public void surfaceChanged(SurfaceHolder holder, int format, int width, int height) {
             super.surfaceChanged(holder, format, width, height);
             setTargetFrameRate(holder);
+            if (mIsSurfaceReady) {
+                wakeGameLoop();
+            }
+        }
+
+        /**
+         * While its surface is not ready, aurora's game loop sleeps in
+         * SDL_WaitEvent, and AuroraSurface marks it ready only AFTER SDL has
+         * queued its resume events. If the loop drains those first, it sees
+         * "not ready", sleeps again, and nothing wakes it until the next input
+         * event: both screens stay black (after Swap Screens, say) until a button press.
+         * One event queued after the flag is set always wakes it. Locale-changed
+         * is queued unconditionally by SDL and nothing in the game handles it.
+         */
+        private static void wakeGameLoop() {
+            try {
+                org.libsdl.app.SDLActivity.onNativeLocaleChanged();
+            } catch (UnsatisfiedLinkError e) {
+                // Library not loaded yet: there is no loop to wake.
+            }
         }
 
         void setPreferredFrameRate(float frameRate) {
